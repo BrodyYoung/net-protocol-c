@@ -6,14 +6,20 @@
 #define XNET_CFG_PACKET_MAX_SIZE 1516
 #define XNET_MAC_ADDR_SIZE 6
 #define XNET_IPV4_ADDR_SIZE 6
-#define XNET_PROTOCOL_IP "192.168.188.54"
 
 #define XNET_CFG_NETIF_IP {192, 168, 254, 2};
 
 #define XARP_ENTRY_FREE 0
+#define XARP_ENTRY_OK 1
+#define XARP_ENTRY_PEDING 2
+#define XARP_TIMER_PERIOD 1
+
 #define XARP_HW_ETHER 0x1
 #define XARP_REQUEST 0x1
 #define XARP_REPLY 0x2
+
+#define XARP_MAX_RETRIES 4
+#define XARP_TIMEOUT (1)
 
 typedef enum _xnet_err_t
 {
@@ -86,4 +92,8 @@ void xnet_poll(void);
 xnet_err_t xnet_driver_open(uint8_t mac_addr);
 xnet_err_t xnet_driver_send(xnet_packet_t *packet);
 xnet_err_t xnet_driver_read(xnet_packet_t **packet);
+
+typedef uint32_t xnet_time_t;
+xnet_time_t xsys_get_time(void);
+
 #endif

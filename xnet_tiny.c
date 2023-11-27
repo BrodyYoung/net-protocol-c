@@ -1,5 +1,6 @@
 #include "xnet_tiny.h"
 #include <stdint.h>
+#include <time.h>
 
 #define min(a, b) ((a) > (b) ? (b) : (a));
 
@@ -83,12 +84,17 @@ void ethernet_in(xnet_packet_t *packet)
     switch (protocol)
     {
     case XNET_PROTOCOL_ARP:
+
         break;
 
     case XNET_PROTOCOL_IP:
         break;
     }
 }
+
+void xarp_in(){
+
+};
 
 void ethernet_poll()
 {
@@ -129,4 +135,45 @@ int xarp_make_request(const xipaddr_t *ipaddr)
     memcpy(arp_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
 
     return ethernet_out_to(XNET_PROTOCOL_ARP, ether_broadcast, packet);
+}
+
+xnet_time_t xsys_get_time()
+{
+
+    return clock() / CLOCKS_PER_SEC;
+}
+
+const xarp_entry_t arp_entry;
+
+void xarp_poll(void)
+{
+    if (xnet_check_tmo())
+    {
+        switch (arp_entry.state)
+        {
+        case XARP_ENTRY_OK:
+            if (--arp_entry.tmo == 0)
+            {
+                xarp_make_request(&arp_entry.ipaddr);
+                arp_entry.state = XARP_ENTRY_PEDING;
+                arp_entry.tmo = XARP_TIMEOUT;
+            }
+            break;
+        case XARP_ENTRY_PEDING:
+            if (--arp_entry.tmo == 0)
+            {
+                if (arp_entry.retry_cnt-- == 0)
+                {
+                    arp_entry.state = XARP_ENTRY_FREE;
+                }
+                else
+                {
+                    make_request(&arp_entry.ipaddr);
+                    arp_entry.state = XARP_ENTRY_PEDING;
+                    arp_entry.tmo = XARP_TIMEOUT;
+                }
+            }
+            break;
+        }
+    }
 }
