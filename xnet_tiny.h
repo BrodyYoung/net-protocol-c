@@ -59,10 +59,10 @@ typedef struct _xarp_packet_t
     uint8_t hw_len, prot_len;
     uint16_t opcode;
     uint8_t send_mac[XNET_MAC_ADDR_SIZE];
-    uint8_t sender_ip[XNET_IP_ADDR_SIZE];
+    uint8_t sender_ip[XNET_IPV4_ADDR_SIZE];
 
     uint8_t target_mac[XNET_MAC_ADDR_SIZE];
-    uint8_t target_ip[XNET_IP_ADDR_SIZE];
+    uint8_t target_ip[XNET_IPV4_ADDR_SIZE];
 } xarp_packet_t;
 
 typedef union _xipaddr_t
