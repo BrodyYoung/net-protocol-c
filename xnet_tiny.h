@@ -96,4 +96,25 @@ xnet_err_t xnet_driver_read(xnet_packet_t **packet);
 typedef uint32_t xnet_time_t;
 xnet_time_t xsys_get_time(void);
 
+#pragma pack(1)
+typedef struct _xip_hdr_t
+{
+
+    uint8_t version;
+    uint8_t header_lenth;
+    uint8_t total_length;
+    uint8_t ttl;
+    uint8_t tos;
+    uint8_t id;
+    uint8_t flags;
+    uint8_t protocal;
+    uint8_t hdr_checksum;
+
+    uint8_t srcIp[XNET_IPV4_ADDR_SIZE];
+    uint8_t destIP[XNET_IPV4_ADDR_SIZE];
+} xip_hdr_t;
+#pragma pack()
+
+
+
 #endif

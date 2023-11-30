@@ -177,3 +177,14 @@ void xarp_poll(void)
         }
     }
 }
+
+void xip_init(){
+
+
+
+}
+
+void xip_in(){
+
+
+}
