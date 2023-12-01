@@ -110,11 +110,14 @@ typedef struct _xip_hdr_t
     uint8_t protocal;
     uint8_t hdr_checksum;
 
-    uint8_t srcIp[XNET_IPV4_ADDR_SIZE];
+    uint8_t srcIP[XNET_IPV4_ADDR_SIZE];
     uint8_t destIP[XNET_IPV4_ADDR_SIZE];
 } xip_hdr_t;
 #pragma pack()
 
+
+
+xnet_err_t xip_out(xnet_protocol_t *protocol,xipaddr_t* dest_ip,xnet_packet_t *packet );
 
 
 #endif

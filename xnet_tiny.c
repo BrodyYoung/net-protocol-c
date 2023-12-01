@@ -175,16 +175,38 @@ void xarp_poll(void)
     }
 }
 
-void xip_init(){
-
-
-
+void xip_init()
+{
 }
 
-void xip_in(){
-
-
+void xip_in()
+{
 }
+
+xnet_err_t xip_out(xnet_protocol_t *protocol, xipaddr_t *dest_ip, xnet_packet_t *packet)
+{
+    xip_hdr_t *iphdr;
+    add_header(packet, sizeof(xip_hdr_t));
+    iphdr = (xip_hdr_t *)packet->data;
+
+    iphdr->hdr_checksum = 0;
+    iphdr->header_lenth = sizeof(packet);
+    iphdr->id = ip_packet_id++;
+    iphdr->header_lenth = sizeof(xip_hdr_t) / 4;
+    iphdr->total_length = swaporder16(packet->size);
+    iphdr->protocal = XNET_PROTOCOL_IP;
+    iphdr->tos = 0;
+    iphdr->ttl = 10;
+    iphdr->flags;
+    iphdr->version - XNET_VERSION_IPV4;
+    memcpy(iphdr->srcIP, &netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
+    memcpy(iphdr->destIP, dest_ip.array, XNET_IPV4_ADDR_SIZE);
+    iphdr->hdr_checksum = 0;
+
+
+    
+}
+
 int xarp_make_response(const xipaddr_t *ipaddr)
 {
     xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
