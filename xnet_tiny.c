@@ -12,7 +12,7 @@
 static xnet_packet_t tx_packet, rx_packet;
 static xarp_entry_t arp_entry;
 static const xipaddr_t netif_ipaddr = XNET_CFG_NETIF_IP;
-static const uint8_t mac_addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static const uint8_t mac_addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static const uint8_t ether_broadcast;
 
 xnet_packet_t *alloc_for_read(uint16_t data_size)
@@ -58,7 +58,7 @@ static xnet_err_t ethernet_init(void)
     return xarp_make_request(&netif_ipaddr);
 }
 
-void ethernet_out_to(uint8_t protocol, uint8_t mac_addr, xnet_packet_t *packet)
+int ethernet_out_to(uint8_t protocol, uint8_t mac_addr, xnet_packet_t *packet)
 {
     xnet_ether_hdr *ether_hdr;
     add_header(packet, sizeof(xnet_ether_hdr));
@@ -84,7 +84,6 @@ void ethernet_in(xnet_packet_t *packet)
     switch (protocol)
     {
     case XNET_PROTOCOL_ARP:
-
         break;
 
     case XNET_PROTOCOL_IP:
@@ -123,10 +122,8 @@ int xarp_make_request(const xipaddr_t *ipaddr)
 
     arp_packet->hw_type = XARP_HW_ETHER;
     arp_packet->prot_type = swap_order(XNET_PROTOCOL_IP);
-
     arp_packet->hw_len = XNET_MAC_ADDR_SIZE;
     arp_packet->prot_len = XNET_IPV4_ADDR_SIZE;
-
     arp_packet->opcode = swap_order(XARP_REQUEST);
 
     memcpy(arp_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
@@ -187,4 +184,22 @@ void xip_init(){
 void xip_in(){
 
 
+}
+int xarp_make_response(const xipaddr_t *ipaddr)
+{
+    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
+    xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
+
+    response_packet->hw_type = XARP_HW_ETHER;
+    response_packet->prot_type = swap_order(XNET_PROTOCOL_IP);
+    response_packet->hw_len = XNET_MAC_ADDR_SIZE;
+    response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
+    response_packet->opcode = swap_order(XARP_REQUEST);
+
+    memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
+    memcpy(response_packet->target_mac, 0, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
+
+    return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
 }
