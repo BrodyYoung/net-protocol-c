@@ -35,7 +35,7 @@ typedef enum _xnet_protocol_t
 
 } xnet_protocol_t;
 
-#param pack(1) // 禁用编译器自动填充
+#pragma pack(1) // 禁用编译器自动填充
 typedef struct _xnet_ether_hdr
 {
     uint8_t dest[XNET_CFG_PACKET_MAX_SIZE];
@@ -43,7 +43,7 @@ typedef struct _xnet_ether_hdr
     uint16_t protocol
 
 } xnet_ether_hdr;
-#param pack(0) // 开启编译器自动填充
+#pragma pack(0) // 开启编译器自动填充
 
 typedef struct _xnet_packet_t
 {
