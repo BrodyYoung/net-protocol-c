@@ -27,6 +27,7 @@ typedef enum _xnet_err_t
 {
     XNET_ERR_OK = 0,
     XNET_ERR_IO = -1,
+    XNET_ERR_BINDED = -4,
 
 } xnet_err_t;
 
@@ -94,7 +95,7 @@ xnet_packet_t *alloc_for_send(uint16_t data_size);
 void xnet_init(void);
 void xnet_poll(void);
 
-xnet_err_t xnet_driver_open(uint8_t mac_addr);
+xnet_err_t xnet_driver_open(uint8_t *mac_addr);
 xnet_err_t xnet_driver_send(xnet_packet_t *packet);
 xnet_err_t xnet_driver_read(xnet_packet_t **packet);
 
@@ -181,5 +182,24 @@ xtcp_t *xtcp_open(xtcp_handler_t *handler);
 xnet_err_t xtcp_close(xtcp_t *tcp);
 xnet_err_t xtcp_bind(xtcp_t *tcp, uint16_t local_port);
 xnet_err_t xtcp_listen(xtcp_t *tcp);
+#define XUDP_CFG_MAX_UDP 10
+struct _xudp_t
+{
+    enum
+    {
+        XUDP_STATE_FREE,
+        XUDP_STATE_USED
+    } state;
 
+    uint16_t local_port;
+    xudp_handler handler;
+}xudp_t;
+
+void xudp_init(void);
+xudp_t *xudp_open(xudp_handler_t handler);
+void xudp_close(uint16_t *udp);
+xudp_t *xudp_find(uint16_t port);
+xnet_err_t xudp_bind(xudp_t *udp, uint8_t port);
+
+#define XNET_IP_DEFAULT_TTL = 60
 #endif

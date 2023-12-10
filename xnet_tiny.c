@@ -5,10 +5,7 @@
 #define min(a, b) ((a) > (b) ? (b) : (a));
 
 // 交换大小端
-#define swap_order16(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
-
-// 12 34 56 78  ->  78 56 34 12
-// #define swap_order32(v) (((v >> 0) & 0xFF) << 24 | ((v >> 8) & 0xFF) << 16) | ((v >> 16) & 0xFF) <<16))
+#define swap_order(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
 
 uint32_t swap_order32(uint32_t v)
 {
@@ -67,6 +64,15 @@ static void remove_header(xnet_packet_t *packet, uint32_t header_size)
 static void truncate_packet(xnet_packet_t *packet, uint16_t size)
 {
     packet->size = min(packet->size, size);
+}
+
+void xnet_init()
+{
+    ethernet_init();
+    xarp_init();
+    xip_init();
+    xicmp_init();
+    xudp_init();
 }
 /* ------------------以太网协议------------------*/
 // 初始化以太网协议
@@ -164,6 +170,44 @@ int xarp_make_request(const xipaddr_t *ipaddr)
     return ethernet_out_to(XNET_PROTOCOL_ARP, ether_broadcast, packet);
 }
 
+int xarp_make_response(const xipaddr_t *ipaddr)
+{
+    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
+    xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
+
+    response_packet->hw_type = XARP_HW_ETHER;
+    response_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
+    response_packet->hw_len = XNET_MAC_ADDR_SIZE;
+    response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
+    response_packet->opcode = 16(XARP_REQUEST);
+
+    memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
+    memcpy(response_packet->target_mac, 0, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
+
+    return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
+}
+
+int xarp_make_response(const xipaddr_t *ipaddr)
+{
+    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
+    xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
+
+    response_packet->hw_type = XARP_HW_ETHER;
+    response_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
+    response_packet->hw_len = XNET_MAC_ADDR_SIZE;
+    response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
+    response_packet->opcode = 16(XARP_REQUEST);
+
+    memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
+    memcpy(response_packet->target_mac, 0, XNET_MAC_ADDR_SIZE);
+    memcpy(response_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
+
+    return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
+}
+
 // 创建ARP协议响应
 int xarp_make_response(const xipaddr_t *ipaddr)
 {
@@ -250,17 +294,20 @@ xnet_err_t xip_out(xnet_protocol_t *protocol, xipaddr_t *dest_ip, xnet_packet_t 
 
     iphdr->hdr_checksum = 0;
     iphdr->header_lenth = sizeof(packet);
-    iphdr->id = ip_packet_id++;
+    iphdr->id = swap_order16(ip_packet_id);
     iphdr->header_lenth = sizeof(xip_hdr_t) / 4;
     iphdr->total_length = swaporder16(packet->size);
     iphdr->protocal = XNET_PROTOCOL_IP;
     iphdr->tos = 0;
-    iphdr->ttl = 10;
-    iphdr->flags;
+    iphdr->ttl = XNET_IP_DEFAULT_TTL;
+
+    iphdr->flags_fragment = 0;
     iphdr->version - XNET_VERSION_IPV4;
     memcpy(iphdr->srcIP, &netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
     memcpy(iphdr->destIP, dest_ip.array, XNET_IPV4_ADDR_SIZE);
     iphdr->hdr_checksum = 0;
+    ipadr->hdr_checksum = check_sum16((uint16 *)iphdr, saizeof(xip_hdr_t), 0, 1);
+    ip_packet_id++;
 }
 
 static xnet_err_t ethernet_out(xipaddr_t *dest_ip, xnet_packet_t *packet)
@@ -269,11 +316,51 @@ static xnet_err_t ethernet_out(xipaddr_t *dest_ip, xnet_packet_t *packet)
     uint8_t *mac_addr;
 }
 
+/* ------------------UDP协议------------------*/
+}
+
 void xtcp_init(void)
 {
     memset(tcp_socket, 0, size(tcp_socket));
 }
 
+void xudp_init(void)
+{
+    memset(udp_socket, 0, sizeof(udp_socket));
+}
+
+xudp_t *xudp_open(xudp_handler_t handler)
+{
+    xudp_t *udp, *end;
+    for (udp = udp_socket, end = &udp_socket[XUDP_CFG_MAX_UDP]; udp < end; udp++)
+    {
+        if (udp->state == XUDP_STATE_FREE)
+        {
+            udp->state = XUDP_STATE_USED;
+            udp->local_port = 0;
+            udp->handler = handler;
+            return udp;
+        }
+    }
+    return (xudp_t *)0;
+}
+
+void xudp_close(uint16_t *udp)
+{
+    udp->state = XUDP_STATE_FREE;
+}
+
+xudp_t *xudp_find(uint16_t port)
+{
+    xudp_t *curr, *end;
+    for (curr = udp_socket, end = &udp_socket[XUDP_CFG_MAX_UDP], curr < end; curr++)
+    {
+        if (curr->state == XUDP_STATE_USED && curr->local_port == port)
+        {
+            return curr;
+        }
+    }
+    return (xudp_t *)0;
 static xnet_err_t tcp_send_reset(uint32_t remote_ack, uint16_t local_port, xipaddr_t *remote_ip, uint16_t remote_port)
 {
     xnet_packet_t *packet = xnwet_alloc_for_send(siozeof(xnet_hdr_t));
@@ -332,67 +419,16 @@ xtcp_t *xtcp_open(xtcp_handler_t *handler)
     return tcp;
 }
 
-xnet_err_t xtcp_close(xtcp_t *tcp)
+xnet_err_t xudp_bind(xudp_t *udp, uint8_t local_port)
 {
-}
-xnet_err_t xtcp_bind(xtcp_t *tcp, uint16_t local_port)
-{
-
-    xtcp_t *curr, end;
-    for (curr = tcp_socket, end = &tcp_socket[XTCP_CFG_MAX_TCP]; curr < end; curr++)
+    xudp_t *curr, *end;
+    for (curr = udp_socket, end = &udp_socket[XUDP_CFG_MAX_UDP], curr < end; curr++)
     {
-        if (curr != tcp && curr->local_port == local_port)
+        if ((curr != udp) && (curr->local_port == local_port))
         {
             return XNET_ERR_BINDED;
         }
-
-        tcp->local_port = local_port;
-        return XNET_ERR_OK;
     }
-}
-
-xnet_err_t xtcp_listen(xtcp_t *tcp)
-{
-    tcp->state = XTCP_STATE_LISTEN;
-    return XNET_ERR_OK;
-}
-
-void xtcp_in(xipaddr_t *remote_ip, xnet_packet_t *packet)
-{
-    xtcp_hdr_t *tcp_hdr = (xtcp_hdr_t *)packet->data;
-    uint16_t pre_checksum;
-    xtcp_t *tcp;
-    if (packet->size < sizeof(xtcp_hdr_t))
-    {
-        return;
-    }
-    pre_checksum = tcp_hdr->checksum;
-
-    tcp_hdr->checksum = 0;
-
-    if (pre_checksum != 0)
-    {
-
-        uint16_t checksum = checksum_peso(remote_ip, &netif_ipaddr, XNET_PROTOCOL_TCP, (uint16_t *)tcp_hdr, packet->size);
-        checksum = (checksum == 0) ? 0xFFFF : checksum;
-        if (checksum != pre_checksum)
-        {
-            return;
-        }
-    }
-    tcp_hdr->src_port = swap_order32(tcp_hdr->src_port);
-    tcp_hdr->dest_port = swap_order32(tcp_hdr->dest_port);
-    tcp_hdr->hdr_flags.all = swap_order32(tcp_hdr->hdr_flags.all);
-
-    tcp_hdr->ack = swap_order32(tcp_hdr->ack);
-    tcp_hdr->window = swap_order32(tcp_hdr->window);
-
-    tcp = tcp_find(remote_ip, tcp->local_port, tcp_hdr->dest_port);
-
-    if (tcp == (xtcp_t *)0)
-    {
-
-        tcp_send_reset(tcp_hdr->seq + 1, tcp_hdr->dest_port, remote_ip, tcp_hdr->src_port);
-        return;
-    }
+    curr->local_port = local_port;
+    return XNET_ERR_IO;
 }
