@@ -8,8 +8,22 @@
 #define swap_order16(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
 
 // 12 34 56 78  ->  78 56 34 12
-#define swap_order32(v) (((v >> 0) & 0xFF) << 24 | ((v >> 8) & 0xFF) << 16) | ((v >> 16) & 0xFF) <<16))
+// #define swap_order32(v) (((v >> 0) & 0xFF) << 24 | ((v >> 8) & 0xFF) << 16) | ((v >> 16) & 0xFF) <<16))
 
+uint32_t swap_order32(uint32_t v)
+{
+    uint8_t *v_array = (uint8_t *)&v;
+    uint8_t temp;
+
+    temp = v_array[0];
+    v_array[0] = v_array[3];
+    v_array[3] = temp;
+
+    temp = v_array[1];
+    v_array[1] = v_array[2];
+    v_array[2] = temp;
+    return v;
+}
 // 发送使用tx_packet，接收使用rx_packet
 
 static xnet_packet_t tx_packet, rx_packet;
@@ -90,7 +104,7 @@ void ethernet_in(xnet_packet_t *packet)
     }
 
     ether_hdr = (xnet_ether_hdr *)packet->data;
-    protocol = swap_order(ether_hdr->protocol);
+    protocol = swap_order16(ether_hdr->protocol);
     switch (protocol)
     {
     case XNET_PROTOCOL_ARP:
@@ -137,10 +151,10 @@ int xarp_make_request(const xipaddr_t *ipaddr)
     xarp_packet_t *arp_packet = (xarp_packet_t *)packet->data;
 
     arp_packet->hw_type = XARP_HW_ETHER;
-    arp_packet->prot_type = swap_order(XNET_PROTOCOL_IP);
+    arp_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
     arp_packet->hw_len = XNET_MAC_ADDR_SIZE;
     arp_packet->prot_len = XNET_IPV4_ADDR_SIZE;
-    arp_packet->opcode = swap_order(XARP_REQUEST);
+    arp_packet->opcode = swap_order16(XARP_REQUEST);
 
     memcpy(arp_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
     memcpy(arp_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
@@ -157,10 +171,10 @@ int xarp_make_response(const xipaddr_t *ipaddr)
     xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
 
     response_packet->hw_type = XARP_HW_ETHER;
-    response_packet->prot_type = swap_order(XNET_PROTOCOL_IP);
+    response_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
     response_packet->hw_len = XNET_MAC_ADDR_SIZE;
     response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
-    response_packet->opcode = swap_order(XARP_REQUEST);
+    response_packet->opcode = swap_order16(XARP_REQUEST);
 
     memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
     memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
