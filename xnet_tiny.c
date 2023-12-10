@@ -5,7 +5,10 @@
 #define min(a, b) ((a) > (b) ? (b) : (a));
 
 // 交换大小端
-#define swap_order(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
+#define swap_order16(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
+
+// 12 34 56 78  ->  78 56 34 12
+#define swap_order32(v) (((v >> 0) & 0xFF) << 24 | ((v >> 8) & 0xFF) << 16) | ((v >> 16) & 0xFF) <<16))
 
 // 发送使用tx_packet，接收使用rx_packet
 
@@ -167,7 +170,7 @@ int xarp_make_response(const xipaddr_t *ipaddr)
     return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
 }
 
-// xnet_err_t xarp_resolve(const xipaddr_t * ) 
+// xnet_err_t xarp_resolve(const xipaddr_t * )
 
 // 获取系统时间，单位秒
 xnet_time_t xsys_get_time()
@@ -250,7 +253,132 @@ static xnet_err_t ethernet_out(xipaddr_t *dest_ip, xnet_packet_t *packet)
 {
     xnet_err_t err;
     uint8_t *mac_addr;
-    
-
 }
 
+void xtcp_init(void)
+{
+    memset(tcp_socket, 0, size(tcp_socket));
+}
+
+static xnet_err_t tcp_send_reset(uint32_t remote_ack, uint16_t local_port, xipaddr_t *remote_ip, uint16_t remote_port)
+{
+    xnet_packet_t *packet = xnwet_alloc_for_send(siozeof(xnet_hdr_t));
+
+    xtcp_hdr_t *tcp_hdr = (xtcp_hdr_t *)packet->data;
+
+    tcp_hdr->src_port = swap_order16(local_port);
+    tcp_hdr->dest_port = swap_order16(remote_port);
+    tcp_hdr->seq = swap(order16(local_port));
+
+    tcp_hdr->ack = swap_order32(remote_ack);
+    tcp_hdr->hdr_flags.all = 0;
+
+    tcp_hdr->hdr_flags.hdr_len = sizeof(xtcp_hdr_t) / 4; // 4个字节为一单位
+    tcp_hdr->hdr_flags.flags = XTCP_FLAG_RST | XTCP_FLAG_ACK;
+    tcp_hdr->hdr_flags.all = swap_order16(tcp_hdr->hdr_flags.all);
+
+    tcp_hdr->window = 0;
+    tcp_hdr->checksum = 0;
+    tcp_hdr->urgent_ptr = 0;
+    tcp_hdr->checksum = checksum_peso(&netif_ipaddr, remote_ip, XNET_PROTOCOL_TCP, (uint16_t *)packet->data, packet->size);
+
+    tcp_hdr->checksum = tcp_hdr->checksum ? tcp_hdr->checksum : 0xFFFF;
+    return xip_out(XNET_PROTOCOL_TCP, remote_ip, packet);
+}
+
+static xtcp_t *xtcp_alloc(void)
+{
+    xtcp_t *tcp, *end;
+
+    for (tcp = tcp_socket, end = tcp_socket + XTCP_CFG_MAX_TCP; tcp < end; tcp++)
+    {
+        if (tcp->state == XTCP_STATE_FREE)
+        {
+            tcp->local_port = 0;
+            tcp->remote_port = 0;
+            tcp->remote_port = 0;
+            tcp->handler = (xtcp_handler_t)0;
+
+            return tcp;
+        }
+    }
+    return (xtcp_t *)0;
+}
+
+xtcp_t *xtcp_open(xtcp_handler_t *handler)
+{
+    xtcp_t *tcp = xtcp_alloc();
+    if (!tcp)
+    {
+        return (xtcp_t *)0;
+    }
+
+    tcp->state = XTCP_STATE_CLOSED;
+    tcp->handler = handler;
+    return tcp;
+}
+
+xnet_err_t xtcp_close(xtcp_t *tcp)
+{
+}
+xnet_err_t xtcp_bind(xtcp_t *tcp, uint16_t local_port)
+{
+
+    xtcp_t *curr, end;
+    for (curr = tcp_socket, end = &tcp_socket[XTCP_CFG_MAX_TCP]; curr < end; curr++)
+    {
+        if (curr != tcp && curr->local_port == local_port)
+        {
+            return XNET_ERR_BINDED;
+        }
+
+        tcp->local_port = local_port;
+        return XNET_ERR_OK;
+    }
+}
+
+xnet_err_t xtcp_listen(xtcp_t *tcp)
+{
+    tcp->state = XTCP_STATE_LISTEN;
+    return XNET_ERR_OK;
+}
+
+void xtcp_in(xipaddr_t *remote_ip, xnet_packet_t *packet)
+{
+    xtcp_hdr_t *tcp_hdr = (xtcp_hdr_t *)packet->data;
+    uint16_t pre_checksum;
+    xtcp_t *tcp;
+    if (packet->size < sizeof(xtcp_hdr_t))
+    {
+        return;
+    }
+    pre_checksum = tcp_hdr->checksum;
+
+    tcp_hdr->checksum = 0;
+
+    if (pre_checksum != 0)
+    {
+
+        uint16_t checksum = checksum_peso(remote_ip, &netif_ipaddr, XNET_PROTOCOL_TCP, (uint16_t *)tcp_hdr, packet->size);
+        checksum = (checksum == 0) ? 0xFFFF : checksum;
+        if (checksum != pre_checksum)
+        {
+            return;
+        }
+    }
+    tcp_hdr->src_port = swap_order32(tcp_hdr->src_port);
+    tcp_hdr->dest_port = swap_order32(tcp_hdr->dest_port);
+    tcp_hdr->hdr_flags.all = swap_order32(tcp_hdr->hdr_flags.all);
+
+    tcp_hdr->ack = swap_order32(tcp_hdr->ack);
+    tcp_hdr->window = swap_order32(tcp_hdr->window);
+
+    tcp = tcp_find(remote_ip, tcp->local_port, tcp_hdr->dest_port);
+
+    if (tcp == (xtcp_t *)0)
+    {
+
+        tcp_send_reset(tcp_hdr->seq + 1, tcp_hdr->dest_port, remote_ip, tcp_hdr->src_port);
+        return;
+    }
+}

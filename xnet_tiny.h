@@ -21,6 +21,8 @@
 #define XARP_MAX_RETRIES 4
 #define XARP_TIMEOUT (1)
 
+#define XTCP_CFG_MAX_TCP 40
+
 typedef enum _xnet_err_t
 {
     XNET_ERR_OK = 0,
@@ -32,6 +34,9 @@ typedef enum _xnet_protocol_t
 {
     XNET_PROTOCOL_ARP = 0x0806,
     XNET_PROTOCOL_IP = 0x0800,
+    XNET_PROTOCOL_ICMP = 1,
+    XNET_PROTOCOL_IP = 17,
+    XNET_PROTOCOL_TCP = 6,
 
 } xnet_protocol_t;
 
@@ -115,9 +120,66 @@ typedef struct _xip_hdr_t
 } xip_hdr_t;
 #pragma pack()
 
+xnet_err_t xip_out(xnet_protocol_t *protocol, xipaddr_t *dest_ip, xnet_packet_t *packet);
 
+typedef struct _xtcp_t xtcp_t;
 
-xnet_err_t xip_out(xnet_protocol_t *protocol,xipaddr_t* dest_ip,xnet_packet_t *packet );
+typedef xnet_err_t (*xtcp_handler_t)(xtcp_t *tcp, xtcp_conn_state_t event);
 
+typedef enum _xtcp_conn_state_t
+{
+    XTCP_CONN_CONNECTED,
+    XTCP_CONN_DATA_RECV,
+    XTCP_CONN_CLOSED,
+} xtcp_conn_state_t;
+
+typedef enum _xtcp_state_t
+{
+    XTCP_STATE_FREE,
+    XTCP_STATE_CLOSED,
+    XTCP_STATE_LISTEN,
+} xtcp_state_t;
+
+typedef struct _xtcp_t
+{
+    xtcp_state_t state;
+    uint16_t local_port, remote_port;
+    xipaddr_t remote_ip;
+    xtcp_handler_t handler;
+} xtcp_t;
+
+#pragma pack(1)
+typedef struct _xtcp_hdr_t
+{
+    uint16_t src_port, dest_port;
+    uint32_t seq, ack;
+#define XTCP_FLAG_FIN (1 << 0)
+#define XTCP_FLAG_SYN (1 << 1)
+#define XTCP_FLAG_RST (1 << 2)
+#define XTCP_FLAG_ACK (1 << 4)
+    union
+    {
+        struct
+        {
+            uint16_t flags : 6;
+            uint16_t reserved : 6;
+            uint16_t hdr_len : 4;
+        };
+        uint16_t all;
+    } hdr_flags;
+    uint16_t window;
+    uint16_t checksum;
+    uint16_t urgent_ptr;
+
+} xtcp_hdr_t;
+#pragma pack(0)
+
+void xtcp_init(void);
+void xtcp_in(xipaddr_t *remote_ip, xnet_packet_t *packet);
+
+xtcp_t *xtcp_open(xtcp_handler_t *handler);
+xnet_err_t xtcp_close(xtcp_t *tcp);
+xnet_err_t xtcp_bind(xtcp_t *tcp, uint16_t local_port);
+xnet_err_t xtcp_listen(xtcp_t *tcp);
 
 #endif
