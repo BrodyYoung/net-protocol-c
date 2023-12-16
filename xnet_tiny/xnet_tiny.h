@@ -1,11 +1,11 @@
 #include <stdint.h>
 
-#ifndef _XNET_TINY
-#define _XNET_TINY
+#ifndef _XNET_TINY_H
+#define _XNET_TINY_H
 
 #define XNET_CFG_PACKET_MAX_SIZE 1516
 #define XNET_MAC_ADDR_SIZE 6
-#define XNET_IPV4_ADDR_SIZE 6
+#define XNET_IPV4_ADDR_SIZE 4
 
 #define XNET_CFG_NETIF_IP {192, 168, 254, 2};
 
@@ -21,7 +21,12 @@
 #define XARP_MAX_RETRIES 4
 #define XARP_TIMEOUT (1)
 
+#define XUDP_CFG_MAX_UDP 10
 #define XTCP_CFG_MAX_TCP 40
+
+#define XNET_IP_DEFAULT_TTL = 60
+
+/* ------------------通用------------------*/
 
 typedef enum _xnet_err_t
 {
@@ -41,6 +46,29 @@ typedef enum _xnet_protocol_t
 
 } xnet_protocol_t;
 
+typedef struct _xnet_packet_t
+{
+    uint16_t size; // 16位
+    uint8_t *data;
+
+    uint16_t payload[XNET_CFG_PACKET_MAX_SIZE];
+} xnet_packet_t;
+
+xnet_packet_t *xnet_alloc_for_read(uint16_t data_size);
+xnet_packet_t *xnet_alloc_for_send(uint16_t data_size);
+
+void xnet_init(void);
+void xnet_poll(void);
+
+xnet_err_t xnet_driver_open(uint8_t *mac_addr);
+xnet_err_t xnet_driver_send(xnet_packet_t *packet);
+xnet_err_t xnet_driver_read(xnet_packet_t **packet);
+
+typedef uint32_t xnet_time_t;
+xnet_time_t xsys_get_time(void);
+
+/* ------------------以太网协议------------------*/
+
 #pragma pack(1) // 禁用编译器自动填充
 typedef struct _xnet_ether_hdr
 {
@@ -51,13 +79,7 @@ typedef struct _xnet_ether_hdr
 } xnet_ether_hdr;
 #pragma pack(0) // 开启编译器自动填充
 
-typedef struct _xnet_packet_t
-{
-    uint16_t size;
-    uint8_t *data;
-
-    uint16_t payload[XNET_CFG_PACKET_MAX_SIZE];
-} xnet_packet_t;
+/* ------------------ARP协议------------------*/
 
 typedef struct _xarp_packet_t
 {
@@ -71,12 +93,6 @@ typedef struct _xarp_packet_t
     uint8_t target_ip[XNET_IPV4_ADDR_SIZE];
 } xarp_packet_t;
 
-typedef union _xipaddr_t
-{
-    uint8_t array[XNET_IPV4_ADDR_SIZE];
-    uint32_t addr;
-} xipaddr_t;
-
 typedef struct _xarp_entry_t
 {
     xipaddr_t ipaddr;
@@ -89,23 +105,11 @@ typedef struct _xarp_entry_t
 
 void xarp_init(void);
 
-xnet_packet_t *alloc_for_read(uint16_t data_size);
-xnet_packet_t *alloc_for_send(uint16_t data_size);
-
-void xnet_init(void);
-void xnet_poll(void);
-
-xnet_err_t xnet_driver_open(uint8_t *mac_addr);
-xnet_err_t xnet_driver_send(xnet_packet_t *packet);
-xnet_err_t xnet_driver_read(xnet_packet_t **packet);
-
-typedef uint32_t xnet_time_t;
-xnet_time_t xsys_get_time(void);
+/* ------------------IP协议------------------*/
 
 #pragma pack(1)
 typedef struct _xip_hdr_t
 {
-
     uint8_t version;
     uint8_t header_lenth;
     uint8_t total_length;
@@ -121,7 +125,35 @@ typedef struct _xip_hdr_t
 } xip_hdr_t;
 #pragma pack()
 
+typedef union _xipaddr_t
+{
+    uint8_t array[XNET_IPV4_ADDR_SIZE];
+    uint32_t addr;
+} xipaddr_t;
+
 xnet_err_t xip_out(xnet_protocol_t *protocol, xipaddr_t *dest_ip, xnet_packet_t *packet);
+
+/* ------------------UDP协议------------------*/
+
+struct _xudp_t
+{
+    enum
+    {
+        XUDP_STATE_FREE,
+        XUDP_STATE_USED
+    } state;
+
+    uint16_t local_port;
+    xudp_handler_t handler;
+} xudp_t;
+
+void xudp_init(void);
+xudp_t *xudp_open(xudp_handler_t handler);
+void xudp_close(uint16_t *udp);
+xudp_t *xudp_find(uint16_t port);
+xnet_err_t xudp_bind(xudp_t *udp, uint8_t port);
+
+/* ------------------TCP协议------------------*/
 
 typedef struct _xtcp_t xtcp_t;
 
@@ -182,24 +214,5 @@ xtcp_t *xtcp_open(xtcp_handler_t *handler);
 xnet_err_t xtcp_close(xtcp_t *tcp);
 xnet_err_t xtcp_bind(xtcp_t *tcp, uint16_t local_port);
 xnet_err_t xtcp_listen(xtcp_t *tcp);
-#define XUDP_CFG_MAX_UDP 10
-struct _xudp_t
-{
-    enum
-    {
-        XUDP_STATE_FREE,
-        XUDP_STATE_USED
-    } state;
 
-    uint16_t local_port;
-    xudp_handler handler;
-}xudp_t;
-
-void xudp_init(void);
-xudp_t *xudp_open(xudp_handler_t handler);
-void xudp_close(uint16_t *udp);
-xudp_t *xudp_find(uint16_t port);
-xnet_err_t xudp_bind(xudp_t *udp, uint8_t port);
-
-#define XNET_IP_DEFAULT_TTL = 60
 #endif

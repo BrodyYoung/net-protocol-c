@@ -1,11 +1,12 @@
 #include <time.h>
+#include "../xnet_tiny/xnet_tiny.h"
 #define TIME_STR_SIZE 128
 
-xnet_err_t datetime_handler(xudp_t *udp, xipaddr *src_ip, uint16_t port, xnet_packet_t *packet)
+xnet_err_t datetime_handler(xudp_t *udp, xipaddr_t *src_ip, uint16_t port, xnet_packet_t *packet)
 {
     time_t rawtime;
     const struct tm *timeinfo;
-    xnet_packet *tx_packet;
+    xnet_packet_t *tx_packet;
     size_t str_size;
 
     tx_packet = xnet_alloc_for_send(TIME_STR_SIZE);

@@ -2,10 +2,12 @@
 #include <stdint.h>
 #include <time.h>
 
+/* ------------------通用------------------*/
+
 #define min(a, b) ((a) > (b) ? (b) : (a));
 
 // 交换大小端
-#define swap_order(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
+#define swap_order16(v) ((v & 0xFF) << 8 | (v >> 8) & 0xFF)
 
 uint32_t swap_order32(uint32_t v)
 {
@@ -21,46 +23,53 @@ uint32_t swap_order32(uint32_t v)
     v_array[2] = temp;
     return v;
 }
-// 发送使用tx_packet，接收使用rx_packet
 
+// 获取系统时间，单位秒
+xnet_time_t xsys_get_time()
+{
+    return clock() / CLOCKS_PER_SEC;
+}
+
+// 发送使用tx_packet，接收使用rx_packet
 static xnet_packet_t tx_packet, rx_packet;
-static xarp_entry_t arp_entry;
+
 static const xipaddr_t netif_ipaddr = XNET_CFG_NETIF_IP;
 static const uint8_t mac_addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static const uint8_t ether_broadcast;
 
-// 分配读数据包
-xnet_packet_t *alloc_for_read(uint16_t data_size)
+// 分配接收数据包
+xnet_packet_t *xnet_alloc_for_read(uint16_t data_size)
 {
     rx_packet.data = rx_packet.payload;
     rx_packet.size = data_size;
-
+    // 返回包的起始地址
     return &rx_packet;
 }
 
-// 分配写数据包
-xnet_packet_t *alloc_for_send(uint16_t data_size)
+// 分配发送数据包
+xnet_packet_t *xnet_alloc_for_send(uint16_t data_size)
 {
-    rx_packet.data = rx_packet.payload;
-    rx_packet.size = data_size;
-    return &rx_packet;
+    tx_packet.data = tx_packet.payload + XNET_CFG_PACKET_MAX_SIZE - data_size;
+    tx_packet.size = data_size;
+    // 返回包的起始地址
+    return &tx_packet;
 }
 
-// 添加协议头
-static void add_header(xnet_packet_t *packet, uint32_t header_size)
+// 添加包头
+static void add_header(xnet_packet_t *packet, uint16_t header_size)
 {
     packet->data -= header_size;
     packet->size += header_size;
 }
 
-// 删除协议头
-static void remove_header(xnet_packet_t *packet, uint32_t header_size)
+// 删除包头
+static void remove_header(xnet_packet_t *packet, uint16_t header_size)
 {
     packet->data += header_size;
     packet->size -= header_size;
 }
 
-// 截断数据包
+// 截断包头
 static void truncate_packet(xnet_packet_t *packet, uint16_t size)
 {
     packet->size = min(packet->size, size);
@@ -87,7 +96,9 @@ static xnet_err_t ethernet_init(void)
     return xarp_make_request(&netif_ipaddr);
 }
 
-int ethernet_out_to(uint8_t protocol, uint8_t mac_addr, xnet_packet_t *packet)
+static uint8_t netif_mac[XNET_MAC_ADDR_SIZE];
+// 以太网协议输出
+static xnet_err_t ethernet_out_to(uint8_t protocol, uint8_t mac_addr, xnet_packet_t *packet)
 {
     xnet_ether_hdr *ether_hdr;
     add_header(packet, sizeof(xnet_ether_hdr));
@@ -100,7 +111,7 @@ int ethernet_out_to(uint8_t protocol, uint8_t mac_addr, xnet_packet_t *packet)
 }
 
 // 以太网协议输入
-void ethernet_in(xnet_packet_t *packet)
+static void ethernet_in(xnet_packet_t *packet)
 {
     xnet_ether_hdr *ether_hdr;
     uint16_t protocol;
@@ -122,7 +133,7 @@ void ethernet_in(xnet_packet_t *packet)
 }
 
 // 以太网协议轮询
-void ethernet_poll()
+static void ethernet_poll()
 {
     xnet_packet_t *packet;
     if (xnet_driver_read(&packet) == XNET_ERR_OK)
@@ -138,6 +149,8 @@ void xnet_poll()
 
 /* ------------------ARP协议------------------*/
 
+static xarp_entry_t arp_entry;
+
 // 初始化ARP协议
 void xarp_init(void)
 {
@@ -152,8 +165,7 @@ void xarp_in(){
 // 创建ARP协议请求
 int xarp_make_request(const xipaddr_t *ipaddr)
 {
-
-    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
+    xnet_packet_t *packet = xnet_alloc_for_send(sizeof(xarp_packet_t));
     xarp_packet_t *arp_packet = (xarp_packet_t *)packet->data;
 
     arp_packet->hw_type = XARP_HW_ETHER;
@@ -170,48 +182,10 @@ int xarp_make_request(const xipaddr_t *ipaddr)
     return ethernet_out_to(XNET_PROTOCOL_ARP, ether_broadcast, packet);
 }
 
-int xarp_make_response(const xipaddr_t *ipaddr)
-{
-    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
-    xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
-
-    response_packet->hw_type = XARP_HW_ETHER;
-    response_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
-    response_packet->hw_len = XNET_MAC_ADDR_SIZE;
-    response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
-    response_packet->opcode = 16(XARP_REQUEST);
-
-    memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
-    memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
-    memcpy(response_packet->target_mac, 0, XNET_MAC_ADDR_SIZE);
-    memcpy(response_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
-
-    return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
-}
-
-int xarp_make_response(const xipaddr_t *ipaddr)
-{
-    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
-    xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
-
-    response_packet->hw_type = XARP_HW_ETHER;
-    response_packet->prot_type = swap_order16(XNET_PROTOCOL_IP);
-    response_packet->hw_len = XNET_MAC_ADDR_SIZE;
-    response_packet->prot_len = XNET_IPV4_ADDR_SIZE;
-    response_packet->opcode = 16(XARP_REQUEST);
-
-    memcpy(response_packet->send_mac, netif_mac, XNET_MAC_ADDR_SIZE);
-    memcpy(response_packet->sender_ip, netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
-    memcpy(response_packet->target_mac, 0, XNET_MAC_ADDR_SIZE);
-    memcpy(response_packet->target_ip, ipaddr->array, XNET_IPV4_ADDR_SIZE);
-
-    return ethernet_out_to(XNET_PROTOCOL_ARP, response_packet->send_mac, packet);
-}
-
 // 创建ARP协议响应
 int xarp_make_response(const xipaddr_t *ipaddr)
 {
-    xnet_packet_t *packet = alloc_for_send(sizeof(xarp_packet_t));
+    xnet_packet_t *packet = xnet_alloc_for_send(sizeof(xarp_packet_t));
     xarp_packet_t *response_packet = (xarp_packet_t *)packet->data;
 
     response_packet->hw_type = XARP_HW_ETHER;
@@ -229,13 +203,6 @@ int xarp_make_response(const xipaddr_t *ipaddr)
 }
 
 // xnet_err_t xarp_resolve(const xipaddr_t * )
-
-// 获取系统时间，单位秒
-xnet_time_t xsys_get_time()
-{
-
-    return clock() / CLOCKS_PER_SEC;
-}
 
 const xarp_entry_t arp_entry;
 
@@ -306,7 +273,7 @@ xnet_err_t xip_out(xnet_protocol_t *protocol, xipaddr_t *dest_ip, xnet_packet_t 
     memcpy(iphdr->srcIP, &netif_ipaddr.array, XNET_IPV4_ADDR_SIZE);
     memcpy(iphdr->destIP, dest_ip.array, XNET_IPV4_ADDR_SIZE);
     iphdr->hdr_checksum = 0;
-    ipadr->hdr_checksum = check_sum16((uint16 *)iphdr, saizeof(xip_hdr_t), 0, 1);
+    iphdr->hdr_checksum = check_sum16((uint16_t *)iphdr, saizeof(xip_hdr_t), 0, 1);
     ip_packet_id++;
 }
 
@@ -317,12 +284,6 @@ static xnet_err_t ethernet_out(xipaddr_t *dest_ip, xnet_packet_t *packet)
 }
 
 /* ------------------UDP协议------------------*/
-}
-
-void xtcp_init(void)
-{
-    memset(tcp_socket, 0, size(tcp_socket));
-}
 
 void xudp_init(void)
 {
@@ -361,6 +322,8 @@ xudp_t *xudp_find(uint16_t port)
         }
     }
     return (xudp_t *)0;
+}
+
 static xnet_err_t tcp_send_reset(uint32_t remote_ack, uint16_t local_port, xipaddr_t *remote_ip, uint16_t remote_port)
 {
     xnet_packet_t *packet = xnwet_alloc_for_send(siozeof(xnet_hdr_t));
@@ -385,6 +348,26 @@ static xnet_err_t tcp_send_reset(uint32_t remote_ack, uint16_t local_port, xipad
 
     tcp_hdr->checksum = tcp_hdr->checksum ? tcp_hdr->checksum : 0xFFFF;
     return xip_out(XNET_PROTOCOL_TCP, remote_ip, packet);
+}
+
+xnet_err_t xudp_bind(xudp_t *udp, uint8_t local_port)
+{
+    xudp_t *curr, *end;
+    for (curr = udp_socket, end = &udp_socket[XUDP_CFG_MAX_UDP], curr < end; curr++)
+    {
+        if ((curr != udp) && (curr->local_port == local_port))
+        {
+            return XNET_ERR_BINDED;
+        }
+    }
+    curr->local_port = local_port;
+    return XNET_ERR_IO;
+}
+
+/* ------------------TCP协议------------------*/
+void xtcp_init(void)
+{
+    memset(tcp_socket, 0, size(tcp_socket));
 }
 
 static xtcp_t *xtcp_alloc(void)
@@ -419,16 +402,4 @@ xtcp_t *xtcp_open(xtcp_handler_t *handler)
     return tcp;
 }
 
-xnet_err_t xudp_bind(xudp_t *udp, uint8_t local_port)
-{
-    xudp_t *curr, *end;
-    for (curr = udp_socket, end = &udp_socket[XUDP_CFG_MAX_UDP], curr < end; curr++)
-    {
-        if ((curr != udp) && (curr->local_port == local_port))
-        {
-            return XNET_ERR_BINDED;
-        }
-    }
-    curr->local_port = local_port;
-    return XNET_ERR_IO;
-}
+/* ------------------HTTP协议------------------*/
